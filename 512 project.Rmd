@@ -1,0 +1,213 @@
+---
+title: "Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+# import the data and change variables
+covid$y = covid$GDPCAP
+covid$x1 = covid$CODE
+covid$x2 = covid$POP
+covid$x3 = covid$HDI
+covid$x4 = covid$TC
+covid$x5 = covid$TD
+
+```
+
+# create new data set for our model
+```{r}
+covid = covid[, c('DATE','y','x1','x2','x3','x4','x5')]
+df = covid[which(covid$DATE=='2020-08-24'),]
+library(tidyr)
+df = df %>% drop_na()
+
+```
+
+# build model: summary, anova(type I and II), lack of fit
+```{r}
+reduced.mod = lm(y~x2+x3+x4+x5, data=df)
+summary(reduced.mod)
+anova(reduced.mod)
+library(car)
+Anova(reduced.mod, type='II')
+
+interdf <- as.data.frame(df$y)
+interdf$x2 <- scale(df$x2)
+interdf$x3 <- scale(df$x3)
+interdf$x4 <- scale(df$x4)
+interdf$x5 <- scale(df$x5)
+interdf$x23 <- interdf$x2*interdf$x3
+interdf$x24 <- interdf$x2*interdf$x4
+interdf$x25 <- interdf$x2*interdf$x5
+interdf$x34 <- interdf$x4*interdf$x3
+interdf$x35 <- interdf$x5*interdf$x3
+interdf$x45 <- interdf$x4*interdf$x5
+interdf$x22 <- (interdf$x2)^2
+interdf$x33 <- (interdf$x3)^2
+interdf$x44 <- (interdf$x4)^2
+interdf$x55 <- (interdf$x5)^2
+
+
+
+new.model <- lm(df$y~x2+x3+x4+x5+x23+x24+x25+x34+x35+x45+x22+x33+x44+x55, interdf)
+anova(new.model)
+Anova(new.model, type='II')
+
+
+#full.mod = lm(y~factor(x2)*factor(x3)*factor(x4)*factor(x5), data=df)
+#anova(reduced.mod, full.mod)
+```
+#1st order MLR diagnostic reduced.mod
+```{r}
+#residualPlots(reduced.mod)
+
+#Check constant variance
+#library(onewaytests)
+#library(ggplot2)
+#df$group <- cut_number(df$y, 5)
+#df$residual <- reduced.mod$residuals
+#bf.test(residual~group, df)
+
+#Check normal
+#shapiro.test(df$residual)
+#qqnorm(df$residual)
+#qqline(df$residual)
+
+
+```
+
+
+#Model selection
+```{r}
+library(ALSM)
+#(bs <- BestSub(df[,4:7], df$y, num = 1))
+#choose model lm(y~x2+x3, df)
+(bs <- BestSub(interdf[,2:15], interdf$`df$y`, num = 1))
+#choose model lm(df$y~x2+x3+x4+x5+x23+x35+x22+x33+x44, interdf)
+best.mod <- lm(`df$y`~x2+x3+x4+x5+x23+x35+x22+x33+x44, interdf)
+
+
+```
+#Model diagnostic
+```{r}
+#check constant variance
+library(onewaytests)
+library(ggplot2)
+interdf$group <- cut_number(interdf$`df$y`, 5)
+interdf$residual <- best.mod$residuals
+bf.test(residual~group, interdf)
+
+#Check normality
+shapiro.test(interdf$residual)
+qqnorm(interdf$residual)
+qqline(interdf$residual)
+
+residualPlots(best.mod)
+plot(best.mod)
+
+#Partial correlation plot
+library(car)
+avPlots(best.mod)
+
+
+#check outliers
+  #DFFITS
+dff <- dffits(best.mod)
+dff[which(abs(dff)>1)]
+  #Cook's disatnce
+cd <- cooks.distance(best.mod)
+cd[which(qf(0.2,10, 170)<abs(cd) &abs(cd)<= qf(.5, 10,170))] #moderate influential
+cd[which(abs(cd)> qf(.5, 10,170))] #major influential
+  #DFBETAS
+d <- dfbetas(best.mod)
+d[which(abs(d[, 2])>1 & abs(d[,3])>1 &abs(d[,4])>1 &abs(d[,5])>1 &abs(d[,6])>1 & 
+          abs(d[,7])>1 &abs(d[,8])>1 &abs(d[,9])>1) &abs(d[,10]>1)]
+
+
+#Check multicollinearity
+  #cor
+explan <- cbind(interdf$x3,interdf$x23,interdf$x35,interdf$x22,interdf$x33,interdf$x44)
+pairs(explan)
+cor(explan)
+  #VIF
+library(fmsb)
+VIF(lm(x2~x3+x4+x5+x23+x35+x22+x33+x44, interdf))
+VIF(lm(x3~x2+x4+x5+x23+x35+x22+x33+x44, interdf))
+VIF(lm(x4~x2+x3+x5+x23+x35+x22+x33+x44, interdf))
+VIF(lm(x5~x2+x3+x4+x23+x35+x22+x33+x44, interdf))
+VIF(lm(x23~x2+x3+x4+x5+x35+x22+x33+x44, interdf))
+VIF(lm(x35~x2+x3+x4+x5+x23+x22+x33+x44, interdf))
+VIF(lm(x22~x2+x3+x4+x5+x23+x35+x33+x44, interdf))
+VIF(lm(x33~x2+x3+x4+x5+x23+x35+x22+x44, interdf))
+VIF(lm(x44~x2+x3+x4+x5+x23+x35+x22+x33, interdf))
+#although we have 10.84977 and 10.47171 which is greater than 10, they are very close to 10
+#so we conclude that there is no moticollinearity problem
+
+```
+#Remedy
+```{r}
+#WLS
+shadow.mod <- best.mod
+for(i in seq(1,12,1)) {
+  wts1 <- 1/fitted(lm(abs(residuals(shadow.mod))~x2+x3+x4+x5+x23+x35+x22+x33+x44, interdf))^2
+  shadow.mod <- lm(`df$y`~x2+x3+x4+x5+x23+x35+x22+x33+x44, weight = wts1, interdf)
+  i = i+1
+}
+  #bftest again
+interdf$group <- cut_number(interdf$`df$y`, 5)
+interdf$residual <- shadow.mod$residuals
+bf.test(residual~group, interdf)
+
+best.mod <- shadow.mod
+summary(best.mod)
+anova(best.mod)
+x <- cbind(rep(1, 180), x)
+y_predicted <- predict(best.mod, newx = x)
+(SST <- sum((interdf$`df$y` - mean(interdf$`df$y`))^2))
+(SSE <- sum((y_predicted - interdf$`df$y`)^2))
+(rsq <- 1 - (SSE/SST))
+
+
+
+
+
+#ridge regression
+library(MASS)
+library(lmridge)
+ridge.bestmod <- lmridge(`df$y`~x2+x3+x4+x5+x23+x35+x22+x33+x44, weight = wts1, interdf, K = seq(0,1,0.02))
+plot(ridge.bestmod)
+vif.lmridge(ridge.bestmod) # choose k = 0.12
+ridge.bestmod <- lmridge(`df$y`~x2+x3+x4+x5+x23+x35+x22+x33+x44, weight = wts1, interdf, K = seq(0.12,0.12))
+summary(ridge.bestmod)
+
+#combine
+library(glmnet)
+x <- cbind(interdf$x2,interdf$x3,interdf$x4,interdf$x5,interdf$x23, interdf$x35,
+           interdf$x22,interdf$x33,interdf$x44)
+final.best.mod <- glmnet(x, interdf$`df$y`, weights = wts1, 
+                      alpha = 0, lambda = 0.12)
+y_predicted <- predict(final.best.mod, newx = x)
+SST <- sum((interdf$`df$y` - mean(interdf$`df$y`))^2)
+SSE <- sum((y_predicted - interdf$`df$y`)^2)
+(rsq <- 1 - (SSE/SST))
+```
+
+
+
+
+
+
+
+
+```{r}
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
